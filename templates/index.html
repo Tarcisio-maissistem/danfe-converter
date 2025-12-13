@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Conversão XML para DANFE</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            background: #f8f9ff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+
+        .upload-area:hover {
+            background: #eef1ff;
+            border-color: #764ba2;
+        }
+
+        .upload-area.dragover {
+            background: #e0e7ff;
+            border-color: #764ba2;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            color: #667eea;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .upload-hint {
+            color: #999;
+            font-size: 13px;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .file-info {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .file-name {
+            color: #333;
+            font-weight: 600;
+            word-break: break-all;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-processar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: none;
+        }
+
+        .btn-processar:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-processar:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .resultados {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .resultado-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px 10px 0 0;
+            text-align: center;
+        }
+
+        .resultado-stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-numero {
+            font-size: 32px;
+            font-weight: bold;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            opacity: 0.9;
+            text-transform: uppercase;
+        }
+
+        .resultado-corpo {
+            background: #f8f9ff;
+            padding: 20px;
+            border-radius: 0 0 10px 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .resultado-item {
+            background: white;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .resultado-item.erro {
+            border-left-color: #e74c3c;
+        }
+
+        .btn-nova {
+            background: #28a745;
+            color: white;
+            margin-top: 20px;
+        }
+
+        .btn-nova:hover {
+            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(40, 167, 69, 0.3);
+        }
+
+        .btn-download {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-download:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(40, 167, 69, 0.3);
+        }
+
+        .download-info {
+            background: #d1ecf1;
+            border: 2px solid #17a2b8;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .download-info strong {
+            color: #0c5460;
+            display: block;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .download-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧾 Conversor XML → DANFE</h1>
+        <p class="subtitle">Converta seus XMLs de NF-e em DANFEs automaticamente</p>
+
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📦</div>
+            <div class="upload-text">Clique ou arraste o arquivo ZIP aqui</div>
+            <div class="upload-hint">Apenas arquivos .zip com XMLs de NF-e</div>
+        </div>
+
+        <input type="file" id="fileInput" accept=".zip">
+
+        <div class="file-info" id="fileInfo">
+            <div class="file-name" id="fileName"></div>
+        </div>
+
+        <button class="btn btn-processar" id="btnProcessar">
+            Processar Arquivos
+        </button>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div>Processando seus arquivos... Aguarde!</div>
+        </div>
+
+        <div class="resultados" id="resultados">
+            <div class="resultado-header">
+                <h2>✅ Processamento Concluído!</h2>
+                <div class="resultado-stats">
+                    <div class="stat">
+                        <div class="stat-numero" id="totalProcessados">0</div>
+                        <div class="stat-label">Sucesso</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-numero" id="totalErros">0</div>
+                        <div class="stat-label">Erros</div>
+                    </div>
+                </div>
+            </div>
+            <div class="resultado-corpo" id="resultadoCorpo"></div>
+            <div class="download-info">
+                <div class="download-icon">📦</div>
+                <strong>Seus arquivos estão prontos!</strong>
+                <p>Clique no botão abaixo para baixar o arquivo DANFE-XML.zip</p>
+            </div>
+            <button class="btn btn-download" id="btnDownload">
+                <span>⬇️</span> Baixar DANFE-XML.zip
+            </button>
+            <button class="btn btn-nova" onclick="location.reload()">
+                Nova Conversão
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const btnProcessar = document.getElementById('btnProcessar');
+        const loading = document.getElementById('loading');
+        const resultados = document.getElementById('resultados');
+        const btnDownload = document.getElementById('btnDownload');
+        let arquivoSelecionado = null;
+        let arquivoZipResultado = null;
+
+        // Detectar URL base automaticamente
+        const API_URL = window.location.origin;
+
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].name.endsWith('.zip')) {
+                fileInput.files = files;
+                handleFileSelect(files[0]);
+            } else {
+                alert('Por favor, selecione apenas arquivos .zip');
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        function handleFileSelect(file) {
+            arquivoSelecionado = file;
+            fileName.textContent = `📄 ${file.name} (${formatBytes(file.size)})`;
+            fileInfo.style.display = 'block';
+            btnProcessar.style.display = 'block';
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        btnProcessar.addEventListener('click', async () => {
+            if (!arquivoSelecionado) return;
+
+            console.log('🚀 INICIANDO UPLOAD E PROCESSAMENTO');
+            console.log('📦 Arquivo:', arquivoSelecionado.name);
+
+            const formData = new FormData();
+            formData.append('arquivo', arquivoSelecionado);
+
+            btnProcessar.style.display = 'none';
+            loading.style.display = 'block';
+
+            try {
+                const response = await fetch(`${API_URL}/processar`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                console.log('📥 Resposta recebida:', response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.erro) {
+                    alert('Erro: ' + data.erro);
+                    btnProcessar.style.display = 'block';
+                    loading.style.display = 'none';
+                    return;
+                }
+
+                loading.style.display = 'none';
+                mostrarResultados(data);
+
+            } catch (error) {
+                console.error('❌ ERRO:', error);
+                alert('Erro ao processar: ' + error.message);
+                btnProcessar.style.display = 'block';
+                loading.style.display = 'none';
+            }
+        });
+
+        function mostrarResultados(data) {
+            document.getElementById('totalProcessados').textContent = data.total_processados;
+            document.getElementById('totalErros').textContent = data.total_erros;
+            arquivoZipResultado = data.arquivo_zip;
+
+            const corpo = document.getElementById('resultadoCorpo');
+            corpo.innerHTML = '';
+
+            data.resultados.forEach((resultado) => {
+                const div = document.createElement('div');
+                div.className = `resultado-item ${resultado.tipo}`;
+                div.textContent = resultado.mensagem;
+                corpo.appendChild(div);
+            });
+
+            resultados.style.display = 'block';
+        }
+
+        btnDownload.addEventListener('click', async () => {
+            console.log('⬇️ Iniciando download:', arquivoZipResultado);
+            if (!arquivoZipResultado) return;
+
+            try {
+                if ('showSaveFilePicker' in window) {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: 'DANFE-XML.zip',
+                        types: [{
+                            description: 'Arquivo ZIP',
+                            accept: { 'application/zip': ['.zip'] }
+                        }]
+                    });
+
+                    const response = await fetch(`${API_URL}/download/${arquivoZipResultado}`);
+                    const blob = await response.blob();
+                    
+                    const writable = await handle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    
+                    alert('✅ Arquivo salvo com sucesso!');
+                } else {
+                    const a = document.createElement('a');
+                    a.href = `${API_URL}/download/${arquivoZipResultado}`;
+                    a.download = 'DANFE-XML.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error('❌ Erro ao salvar:', error);
+                    alert('Erro ao salvar arquivo: ' + error.message);
+                }
+            }
+        });
+
+        console.log('✅ Sistema carregado!');
+        console.log('🌐 API URL:', API_URL);
+    </script>
+</body>
+</html>
