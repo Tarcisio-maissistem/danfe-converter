@@ -71,6 +71,24 @@ except ImportError:
 # FUNÇÕES AUXILIARES
 # ========================================
 
+def is_xml_nfe(xml_path):
+    """
+    Verifica se o XML é uma NFe válida.
+    Ignora eventos, NFSe e outros XMLs fiscais.
+    """
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+
+        # Namespace padrão da NFe
+        ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
+
+        return root.find('.//nfe:infNFe', ns) is not None
+    except Exception as e:
+        logger.warning(f"⚠️ Erro ao validar tipo do XML {os.path.basename(xml_path)}: {str(e)}")
+        return False
+
+
 def is_valid_zip(path):
     """Verifica se o arquivo é um ZIP válido"""
     try:
@@ -369,6 +387,7 @@ def processar():
                     else:
                         total_erros += 1
                         resultados.append({'tipo': 'erro', 'mensagem': f"{file}: {mensagem}"})
+
         
         logger.info(f"📊 Total de XMLs encontrados: {xml_count}")
         
