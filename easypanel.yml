@@ -1,0 +1,38 @@
+version: '1'
+
+services:
+  app:
+    name: danfe-converter
+    image:
+      dockerfile: ./Dockerfile
+    
+    # Porta exposta
+    ports:
+      - 80:80
+    
+    # Variáveis de ambiente
+    environment:
+      - ENVIRONMENT=production
+      - PORT=80
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+    
+    # Health check
+    healthcheck:
+      path: /health
+      interval: 30
+      timeout: 10
+      retries: 3
+    
+    # Recursos
+    resources:
+      memory: 1024Mi
+      cpu: 500m
+    
+    # Auto-deploy
+    deploy:
+      on_push: true
+      branch: main
+    
+    # Domínio customizado
+    domains:
+      - ${APP_DOMAIN}
