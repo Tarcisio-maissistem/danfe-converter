@@ -27,7 +27,7 @@
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             padding: 40px;
-            max-width: 600px;
+            max-width: 700px;
             width: 100%;
         }
 
@@ -88,37 +88,155 @@
             display: none;
         }
 
-        .file-info {
-            background: #f0f0f0;
+        /* Lista de arquivos */
+        .files-container {
+            margin: 20px 0;
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .files-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .files-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .files-container::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 10px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #999;
+            font-style: italic;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #f8f9ff;
             padding: 15px;
             border-radius: 10px;
-            margin-bottom: 20px;
-            display: none;
+            margin-bottom: 10px;
+            border: 2px solid #e8ebff;
+            transition: all 0.3s ease;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .file-item:hover {
+            border-color: #667eea;
+            background: #f0f2ff;
+        }
+
+        .file-info-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-icon {
+            font-size: 28px;
+            flex-shrink: 0;
+        }
+
+        .file-details {
+            flex: 1;
+            min-width: 0;
         }
 
         .file-name {
             color: #333;
             font-weight: 600;
-            word-break: break-all;
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-size {
+            color: #999;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+
+        .btn-remove {
+            background: #ff4757;
+            color: white;
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-remove:hover {
+            background: #ff3838;
+            transform: rotate(90deg) scale(1.1);
+        }
+
+        /* Botões de ação */
+        .actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
         }
 
         .btn {
-            width: 100%;
+            flex: 1;
             padding: 15px;
             border: none;
             border-radius: 10px;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-limpar {
+            background: #f0f0f0;
+            color: #666;
+        }
+
+        .btn-limpar:hover:not(:disabled) {
+            background: #e0e0e0;
+            color: #333;
         }
 
         .btn-processar {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            display: none;
         }
 
         .btn-processar:hover:not(:disabled) {
@@ -126,9 +244,10 @@
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
 
-        .btn-processar:disabled {
-            opacity: 0.6;
+        .btn:disabled {
+            opacity: 0.5;
             cursor: not-allowed;
+            transform: none !important;
         }
 
         .loading {
@@ -200,6 +319,7 @@
             margin-bottom: 10px;
             border-radius: 8px;
             border-left: 4px solid #667eea;
+            font-size: 13px;
         }
 
         .resultado-item.erro {
@@ -210,6 +330,7 @@
             background: #28a745;
             color: white;
             margin-top: 20px;
+            width: 100%;
         }
 
         .btn-nova:hover {
@@ -222,10 +343,7 @@
             background: linear-gradient(135deg, #1118d7 0%, #20c997 100%);
             color: white;
             margin-top: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
+            width: 100%;
         }
 
         .btn-download:hover {
@@ -253,6 +371,20 @@
             font-size: 48px;
             margin-bottom: 10px;
         }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 25px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
 <body>
@@ -262,19 +394,24 @@
 
         <div class="upload-area" id="uploadArea">
             <div class="upload-icon">📦</div>
-            <div class="upload-text">Clique ou arraste o arquivo ZIP aqui</div>
-            <div class="upload-hint">Apenas arquivos .zip com XMLs de NF-e</div>
+            <div class="upload-text">Clique ou arraste arquivos aqui</div>
+            <div class="upload-hint">Aceita: XML, ZIP, RAR (múltiplos arquivos)</div>
         </div>
 
-        <input type="file" id="fileInput" accept=".zip">
+        <input type="file" id="fileInput" multiple accept=".xml,.zip,.rar">
 
-        <div class="file-info" id="fileInfo">
-            <div class="file-name" id="fileName"></div>
+        <div class="files-container" id="filesContainer">
+            <div class="empty-state">Nenhum arquivo selecionado</div>
         </div>
 
-        <button class="btn btn-processar" id="btnProcessar">
-            Processar Arquivos
-        </button>
+        <div class="actions">
+            <button class="btn btn-limpar" id="btnLimpar" disabled>
+                🗑️ Limpar
+            </button>
+            <button class="btn btn-processar" id="btnProcessar" disabled>
+                ⚙️ Processar
+            </button>
+        </div>
 
         <div class="loading" id="loading">
             <div class="spinner"></div>
@@ -311,22 +448,37 @@
     </div>
 
     <script>
+        // Elementos DOM
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
-        const fileInfo = document.getElementById('fileInfo');
-        const fileName = document.getElementById('fileName');
+        const filesContainer = document.getElementById('filesContainer');
+        const btnLimpar = document.getElementById('btnLimpar');
         const btnProcessar = document.getElementById('btnProcessar');
         const loading = document.getElementById('loading');
         const resultados = document.getElementById('resultados');
         const btnDownload = document.getElementById('btnDownload');
-        let arquivoSelecionado = null;
+
+        // Estado
+        let selectedFiles = [];
         let arquivoZipResultado = null;
 
         // Detectar URL base automaticamente
         const API_URL = window.location.origin;
 
+        // Event Listeners
         uploadArea.addEventListener('click', () => fileInput.click());
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                addFiles(Array.from(e.target.files));
+                fileInput.value = ''; // Reset input
+            }
+        });
 
+        btnLimpar.addEventListener('click', limparTudo);
+        btnProcessar.addEventListener('click', processarArquivos);
+
+        // Drag and Drop
         uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
             uploadArea.classList.add('dragover');
@@ -339,27 +491,88 @@
         uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
             uploadArea.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files);
+            addFiles(files);
+        });
+
+        // Funções
+        function addFiles(files) {
+            const validExtensions = ['.xml', '.zip', '.rar'];
+            let addedCount = 0;
             
-            const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].name.endsWith('.zip')) {
-                fileInput.files = files;
-                handleFileSelect(files[0]);
-            } else {
-                alert('Por favor, selecione apenas arquivos .zip');
-            }
-        });
+            files.forEach(file => {
+                const ext = '.' + file.name.split('.').pop().toLowerCase();
+                
+                if (validExtensions.includes(ext)) {
+                    // Evitar duplicatas
+                    const isDuplicate = selectedFiles.some(f => 
+                        f.name === file.name && f.size === file.size
+                    );
+                    
+                    if (!isDuplicate) {
+                        selectedFiles.push(file);
+                        addedCount++;
+                    }
+                } else {
+                    alert(`Arquivo ignorado: ${file.name}\nApenas XML, ZIP e RAR são aceitos.`);
+                }
+            });
 
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFileSelect(e.target.files[0]);
+            if (addedCount > 0) {
+                updateFilesList();
+                updateButtons();
             }
-        });
+        }
 
-        function handleFileSelect(file) {
-            arquivoSelecionado = file;
-            fileName.textContent = `📄 ${file.name} (${formatBytes(file.size)})`;
-            fileInfo.style.display = 'block';
-            btnProcessar.style.display = 'block';
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFilesList();
+            updateButtons();
+        }
+
+        function limparTudo() {
+            if (confirm('Deseja remover todos os arquivos selecionados?')) {
+                selectedFiles = [];
+                updateFilesList();
+                updateButtons();
+            }
+        }
+
+        function updateFilesList() {
+            if (selectedFiles.length === 0) {
+                filesContainer.innerHTML = '<div class="empty-state">Nenhum arquivo selecionado</div>';
+                return;
+            }
+
+            filesContainer.innerHTML = selectedFiles.map((file, index) => {
+                const icon = getFileIcon(file.name);
+                const size = formatBytes(file.size);
+                
+                return `
+                    <div class="file-item">
+                        <div class="file-info-left">
+                            <div class="file-icon">${icon}</div>
+                            <div class="file-details">
+                                <div class="file-name" title="${file.name}">${file.name}</div>
+                                <div class="file-size">${size}</div>
+                            </div>
+                        </div>
+                        <button class="btn-remove" onclick="removeFile(${index})" title="Remover arquivo">
+                            ×
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const icons = {
+                'xml': '📄',
+                'zip': '📦',
+                'rar': '🗜️'
+            };
+            return icons[ext] || '📎';
         }
 
         function formatBytes(bytes) {
@@ -370,17 +583,27 @@
             return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
         }
 
-        btnProcessar.addEventListener('click', async () => {
-            if (!arquivoSelecionado) return;
+        function updateButtons() {
+            const hasFiles = selectedFiles.length > 0;
+            btnLimpar.disabled = !hasFiles;
+            btnProcessar.disabled = !hasFiles;
+        }
+
+        async function processarArquivos() {
+            if (selectedFiles.length === 0) return;
 
             console.log('🚀 INICIANDO UPLOAD E PROCESSAMENTO');
-            console.log('📦 Arquivo:', arquivoSelecionado.name);
+            console.log('📦 Total de arquivos:', selectedFiles.length);
 
             const formData = new FormData();
-            formData.append('arquivo', arquivoSelecionado);
+            selectedFiles.forEach(file => {
+                formData.append('arquivos', file);
+            });
 
-            btnProcessar.style.display = 'none';
+            btnProcessar.disabled = true;
+            btnLimpar.disabled = true;
             loading.style.display = 'block';
+            resultados.style.display = 'none';
 
             try {
                 const response = await fetch(`${API_URL}/processar`, {
@@ -391,16 +614,14 @@
                 console.log('📥 Resposta recebida:', response.status);
 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.erro || `HTTP error! status: ${response.status}`);
                 }
 
                 const data = await response.json();
 
                 if (data.erro) {
-                    alert('Erro: ' + data.erro);
-                    btnProcessar.style.display = 'block';
-                    loading.style.display = 'none';
-                    return;
+                    throw new Error(data.erro);
                 }
 
                 loading.style.display = 'none';
@@ -409,10 +630,11 @@
             } catch (error) {
                 console.error('❌ ERRO:', error);
                 alert('Erro ao processar: ' + error.message);
-                btnProcessar.style.display = 'block';
+                btnProcessar.disabled = false;
+                btnLimpar.disabled = false;
                 loading.style.display = 'none';
             }
-        });
+        }
 
         function mostrarResultados(data) {
             document.getElementById('totalProcessados').textContent = data.total_processados;
@@ -422,12 +644,14 @@
             const corpo = document.getElementById('resultadoCorpo');
             corpo.innerHTML = '';
 
-            data.resultados.forEach((resultado) => {
-                const div = document.createElement('div');
-                div.className = `resultado-item ${resultado.tipo}`;
-                div.textContent = resultado.mensagem;
-                corpo.appendChild(div);
-            });
+            if (data.resultados && data.resultados.length > 0) {
+                data.resultados.forEach((resultado) => {
+                    const div = document.createElement('div');
+                    div.className = `resultado-item ${resultado.tipo}`;
+                    div.textContent = resultado.mensagem;
+                    corpo.appendChild(div);
+                });
+            }
 
             resultados.style.display = 'block';
         }
@@ -470,8 +694,11 @@
             }
         });
 
+        // Tornar funções disponíveis globalmente
+        window.removeFile = removeFile;
+
         console.log('✅ Sistema carregado!');
-        console.log('🌐 API URL:', API_URL);
+        console.log('🌍 API URL:', API_URL);
     </script>
 </body>
 </html>

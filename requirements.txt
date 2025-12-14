@@ -2,5 +2,11 @@
 Flask==3.0.0
 flask-cors==4.0.0
 brazilfiscalreport
-gunicorn==21.2.0
+python-barcode==0.15.1
+reportlab==4.0.7
+Pillow==10.1.0
+rarfile==4.1
 Werkzeug==3.0.1
+
+# Dependências opcionais
+gunicorn

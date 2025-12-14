@@ -11,6 +11,7 @@ import traceback
 import logging
 import sys
 from datetime import datetime
+import tempfile
 
 # ========================================
 # CONFIGURAÇÃO DE LOGGING PROFISSIONAL
@@ -37,15 +38,15 @@ logger.info(f"🔒 CORS configurado para: {ALLOWED_ORIGINS}")
 CORS(app, resources={
     r"/*": {
         "origins": ALLOWED_ORIGINS,
-        "methods": ["GET", "POST", "OPTIONS"],
+        "methods": ["GET", "POST", "OPTIONS", "DELETE"],
         "allow_headers": ["Content-Type"],
-        "max_age": 3600  # Cache preflight por 1 hora
+        "max_age": 3600
     }
 })
 
 # Configurações da aplicação
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max
-app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 3600  # Cache de 1 hora para arquivos estáticos
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 3600
 
 # Usar /tmp em produção (Docker/Linux) ou pasta local em desenvolvimento
 IS_PRODUCTION = os.getenv('ENVIRONMENT', 'production') == 'production'
@@ -55,6 +56,16 @@ TEMP_OUTPUT = '/tmp/temp_output' if IS_PRODUCTION else 'temp_output'
 logger.info(f"🌍 Ambiente: {'PRODUÇÃO' if IS_PRODUCTION else 'DESENVOLVIMENTO'}")
 logger.info(f"📁 Upload folder: {UPLOAD_FOLDER}")
 logger.info(f"📁 Output folder: {TEMP_OUTPUT}")
+
+# Tentar importar rarfile (biblioteca para .RAR)
+try:
+    import rarfile
+    RAR_AVAILABLE = True
+    logger.info("✅ Suporte para arquivos .RAR disponível")
+except ImportError:
+    RAR_AVAILABLE = False
+    logger.warning("⚠️ rarfile não instalado - arquivos .RAR não serão suportados")
+    logger.warning("   Para habilitar: pip install rarfile")
 
 # ========================================
 # FUNÇÕES AUXILIARES
@@ -75,27 +86,41 @@ def sanitize_path(base_dir, filename):
     return filepath
 
 def safe_extract_zip(zip_path, extract_dir):
-    """
-    Extrai ZIP de forma segura, prevenindo Zip Slip
-    """
+    """Extrai ZIP de forma segura, prevenindo Zip Slip"""
     logger.info(f"📂 Extraindo ZIP com validação de segurança...")
     
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
         for member in zip_ref.namelist():
-            # Validar cada arquivo antes de extrair
             target_path = sanitize_path(extract_dir, member)
             
-            # Criar diretórios se necessário
             if member.endswith('/'):
                 os.makedirs(target_path, exist_ok=True)
             else:
                 os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                
-                # Extrair arquivo
                 with zip_ref.open(member) as source, open(target_path, 'wb') as target:
                     shutil.copyfileobj(source, target)
     
     logger.info(f"✅ ZIP extraído com segurança em: {extract_dir}")
+
+def safe_extract_rar(rar_path, extract_dir):
+    """Extrai RAR de forma segura"""
+    if not RAR_AVAILABLE:
+        raise Exception("Suporte para RAR não disponível. Instale: pip install rarfile")
+    
+    logger.info(f"📂 Extraindo RAR com validação de segurança...")
+    
+    with rarfile.RarFile(rar_path, 'r') as rar_ref:
+        for member in rar_ref.namelist():
+            target_path = sanitize_path(extract_dir, member)
+            
+            if member.endswith('/') or member.endswith('\\'):
+                os.makedirs(target_path, exist_ok=True)
+            else:
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                with rar_ref.open(member) as source, open(target_path, 'wb') as target:
+                    shutil.copyfileobj(source, target)
+    
+    logger.info(f"✅ RAR extraído com segurança em: {extract_dir}")
 
 def extrair_dados_xml(xml_path):
     """Extrai informações do destinatário do XML"""
@@ -178,7 +203,6 @@ def cleanup_old_files():
             for item in os.listdir(folder):
                 item_path = os.path.join(folder, item)
                 
-                # Verificar idade do arquivo/pasta
                 if os.path.getmtime(item_path) < current_time - 3600:  # 1 hora
                     try:
                         if os.path.isdir(item_path):
@@ -214,12 +238,12 @@ def health():
     return jsonify({
         'status': 'ok',
         'timestamp': datetime.now().isoformat(),
-        'environment': 'production' if IS_PRODUCTION else 'development'
+        'environment': 'production' if IS_PRODUCTION else 'development',
+        'rar_support': RAR_AVAILABLE
     }), 200
 
 @app.route('/processar', methods=['POST', 'OPTIONS'])
 def processar():
-    # Responder a requisições OPTIONS (preflight CORS)
     if request.method == 'OPTIONS':
         return '', 204
     
@@ -227,59 +251,83 @@ def processar():
     logger.info("🚀 INICIANDO PROCESSAMENTO")
     logger.info("=" * 60)
     
-    # Limpar arquivos antigos antes de processar
     cleanup_old_files()
     
-    if 'arquivo' not in request.files:
+    # Aceitar múltiplos arquivos (novo) ou arquivo único (compatibilidade)
+    arquivos = []
+    if 'arquivos' in request.files:
+        arquivos = request.files.getlist('arquivos')
+    elif 'arquivo' in request.files:
+        arquivos = [request.files['arquivo']]
+    
+    if not arquivos:
         logger.error("❌ Nenhum arquivo enviado")
         return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
     
-    arquivo = request.files['arquivo']
-    
-    if arquivo.filename == '':
+    if not arquivos or len(arquivos) == 0 or (len(arquivos) == 1 and arquivos[0].filename == ''):
         logger.error("❌ Nenhum arquivo selecionado")
         return jsonify({'erro': 'Nenhum arquivo selecionado'}), 400
     
-    if not arquivo.filename.endswith('.zip'):
-        logger.error("❌ Arquivo não é ZIP")
-        return jsonify({'erro': 'Apenas arquivos ZIP são aceitos'}), 400
-    
-    logger.info(f"📦 Arquivo recebido: {arquivo.filename}")
+    logger.info(f"📦 Arquivos recebidos: {len(arquivos)}")
     
     resultados = []
     total_processados = 0
     total_erros = 0
     
-    # Criar pastas temporárias se não existirem
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     os.makedirs(TEMP_OUTPUT, exist_ok=True)
     
     try:
-        # Criar pasta temporária única para este processamento
         import uuid
         temp_id = str(uuid.uuid4())[:8]
         temp_dir = os.path.join(UPLOAD_FOLDER, f'temp_{temp_id}')
         os.makedirs(temp_dir, exist_ok=True)
         
-        # Salvar arquivo ZIP
-        zip_path = os.path.join(temp_dir, limpar_nome_arquivo(arquivo.filename))
-        arquivo.save(zip_path)
-        logger.info(f"💾 ZIP salvo em: {zip_path}")
-        
-        # Extrair ZIP com segurança
         extract_dir = os.path.join(temp_dir, 'extracted')
         os.makedirs(extract_dir, exist_ok=True)
         
-        safe_extract_zip(zip_path, extract_dir)
+        # Processar cada arquivo enviado
+        for arquivo in arquivos:
+            if arquivo.filename == '':
+                continue
+            
+            filename_lower = arquivo.filename.lower()
+            logger.info(f"📄 Processando: {arquivo.filename}")
+            
+            # Se for XML direto, salvar na pasta de extração
+            if filename_lower.endswith('.xml'):
+                xml_path = os.path.join(extract_dir, limpar_nome_arquivo(arquivo.filename))
+                arquivo.save(xml_path)
+                logger.info(f"✅ XML salvo diretamente: {arquivo.filename}")
+            
+            # Se for ZIP, extrair
+            elif filename_lower.endswith('.zip'):
+                zip_path = os.path.join(temp_dir, limpar_nome_arquivo(arquivo.filename))
+                arquivo.save(zip_path)
+                logger.info(f"📦 ZIP salvo: {arquivo.filename}")
+                safe_extract_zip(zip_path, extract_dir)
+            
+            # Se for RAR, extrair
+            elif filename_lower.endswith('.rar'):
+                if not RAR_AVAILABLE:
+                    logger.error("❌ Suporte para RAR não disponível")
+                    return jsonify({'erro': 'Suporte para arquivos .RAR não está instalado no servidor'}), 400
+                
+                rar_path = os.path.join(temp_dir, limpar_nome_arquivo(arquivo.filename))
+                arquivo.save(rar_path)
+                logger.info(f"📦 RAR salvo: {arquivo.filename}")
+                safe_extract_rar(rar_path, extract_dir)
+            
+            else:
+                logger.warning(f"⚠️ Arquivo ignorado (formato não suportado): {arquivo.filename}")
         
-        # Processar cada XML
+        # Processar todos os XMLs encontrados
         pasta_danfe = os.path.join(extract_dir, 'DANFE-XML')
         os.makedirs(pasta_danfe, exist_ok=True)
         logger.info(f"📁 Pasta DANFE-XML criada: {pasta_danfe}")
         
         xml_count = 0
         for root, dirs, files in os.walk(extract_dir):
-            # IMPORTANTE: Ignorar a pasta DANFE-XML para não processar arquivos duplicados
             if 'DANFE-XML' in root:
                 continue
             
@@ -288,7 +336,7 @@ def processar():
                     xml_count += 1
                     xml_path = os.path.join(root, file)
                     
-                    if xml_count % 10 == 0:  # Log a cada 10 arquivos
+                    if xml_count % 10 == 0:
                         logger.info(f"📊 Processados {xml_count} XMLs...")
                     
                     sucesso, mensagem = processar_xml_para_danfe(xml_path, pasta_danfe)
@@ -301,6 +349,11 @@ def processar():
                         resultados.append({'tipo': 'erro', 'mensagem': f"{file}: {mensagem}"})
         
         logger.info(f"📊 Total de XMLs encontrados: {xml_count}")
+        
+        if xml_count == 0:
+            logger.error("❌ Nenhum arquivo XML encontrado")
+            shutil.rmtree(temp_dir)
+            return jsonify({'erro': 'Nenhum arquivo XML encontrado nos arquivos enviados'}), 400
         
         # Criar arquivo ZIP com os resultados
         zip_resultado = os.path.join(TEMP_OUTPUT, f'DANFE-XML_{temp_id}.zip')
@@ -315,7 +368,6 @@ def processar():
         
         logger.info(f"✅ ZIP final criado com sucesso!")
         
-        # Limpar pasta temporária
         shutil.rmtree(temp_dir)
         logger.info(f"🧹 Arquivos temporários removidos")
         
@@ -334,9 +386,8 @@ def processar():
         })
         
     except ValueError as e:
-        # Erro de segurança (Zip Slip)
         logger.error(f"🚨 TENTATIVA DE ATAQUE DETECTADA: {str(e)}")
-        return jsonify({'erro': 'Arquivo ZIP contém caminhos inválidos'}), 400
+        return jsonify({'erro': 'Arquivo contém caminhos inválidos'}), 400
     except Exception as e:
         logger.error("=" * 60)
         logger.error(f"❌ ERRO CRÍTICO NO PROCESSAMENTO")
@@ -349,11 +400,9 @@ def processar():
 def download(filename):
     """Endpoint para download do arquivo ZIP processado"""
     try:
-        # Sanitizar filename para prevenir path traversal
         safe_filename = os.path.basename(filename)
         file_path = os.path.join(TEMP_OUTPUT, safe_filename)
         
-        # Verificar se arquivo existe
         if not os.path.exists(file_path):
             logger.error(f"❌ Arquivo não encontrado: {safe_filename}")
             return jsonify({'erro': 'Arquivo não encontrado'}), 404
@@ -364,7 +413,7 @@ def download(filename):
             file_path,
             as_attachment=True,
             download_name='DANFE-XML.zip',
-            max_age=0  # Sem cache para downloads
+            max_age=0
         )
     except Exception as e:
         logger.error(f"❌ Erro ao baixar arquivo: {str(e)}")
@@ -380,13 +429,13 @@ if __name__ == '__main__':
     logger.info("=" * 60)
     logger.info(f"🌍 Ambiente: {'PRODUÇÃO' if IS_PRODUCTION else 'DESENVOLVIMENTO'}")
     logger.info(f"🔒 CORS Origins: {ALLOWED_ORIGINS}")
+    logger.info(f"📦 Suporte RAR: {'✅ SIM' if RAR_AVAILABLE else '❌ NÃO'}")
     logger.info("=" * 60)
     
     if IS_PRODUCTION:
         logger.warning("⚠️  Executando Flask dev server em produção!")
         logger.warning("⚠️  Use Gunicorn para produção: gunicorn app:app")
     
-    # Servidor - funciona local e produção
     app.run(
         debug=not IS_PRODUCTION,
         host='0.0.0.0',
