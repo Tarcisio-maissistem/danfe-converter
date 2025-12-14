@@ -1,6 +1,6 @@
 
 Flask==3.0.0
 flask-cors==4.0.0
-brazilfiscalreport==0.5.33
+brazilfiscalreport
 gunicorn==21.2.0
 Werkzeug==3.0.1
