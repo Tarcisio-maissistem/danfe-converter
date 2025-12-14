@@ -7,30 +7,35 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
-    name: Deploy Application
+  notify:
+    name: Notify Deploy
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get Easypanel project info
-        id: project
+      - name: Deploy notification
         run: |
-          echo "Deploying to Easypanel..."
+          echo "✅ Push detectado na branch main"
+          echo "🚀 Easypanel iniciará o deploy automaticamente"
+          echo "📦 Commit: ${{ github.sha }}"
+          echo "👤 Autor: ${{ github.actor }}"
 
-      - name: Trigger Easypanel deployment
+      - name: Wait for Easypanel
         run: |
-          curl -X POST "https://api.easypanel.io/v1/projects/app/services/danfe-converter/deploy" \
-            -H "Authorization: Bearer ${{ secrets.EASYPANEL_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d '{"ref": "main"}'
+          echo "⏳ Aguardando deploy no Easypanel..."
+          sleep 60
 
-      - name: Wait for deployment
-        run: sleep 45
-
-      - name: Check deployment status
+      - name: Check application health
         run: |
-          echo "✅ Deploy triggered successfully!"
-          echo "Check logs at Easypanel dashboard"
+          echo "🔍 Verificando saúde da aplicação..."
+          response=$(curl -s -o /dev/null -w "%{http_code}" "https://danfe.maissistem.com.br/health")
+          
+          if [ "$response" -eq 200 ]; then
+            echo "✅ Aplicação está saudável! (HTTP $response)"
+            echo "🎉 Deploy concluído com sucesso!"
+          else
+            echo "⚠️ Status HTTP: $response"
+            echo "ℹ️ Verifique os logs no Easypanel"
+          fi
