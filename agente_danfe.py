@@ -10,7 +10,7 @@ from watchdog.events import FileSystemEventHandler
 # ================= CONFIGURAÇÕES =================
 
 HEADERS = {
-    "X-CNPJ": "27469509000135"
+    "X-CNPJ": "27469509000134"
 }
 
 API_URL = "https://danfe.maissistem.com.br/processar"
