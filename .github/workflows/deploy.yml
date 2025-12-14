@@ -1,0 +1,36 @@
+name: Deploy to Easypanel
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy Application
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get Easypanel project info
+        id: project
+        run: |
+          echo "Deploying to Easypanel..."
+
+      - name: Trigger Easypanel deployment
+        run: |
+          curl -X POST "https://api.easypanel.io/v1/projects/app/services/danfe-converter/deploy" \
+            -H "Authorization: Bearer ${{ secrets.EASYPANEL_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"ref": "main"}'
+
+      - name: Wait for deployment
+        run: sleep 45
+
+      - name: Check deployment status
+        run: |
+          echo "✅ Deploy triggered successfully!"
+          echo "Check logs at Easypanel dashboard"
