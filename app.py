@@ -71,6 +71,13 @@ except ImportError:
 # FUNÇÕES AUXILIARES
 # ========================================
 
+def is_valid_zip(path):
+    """Verifica se o arquivo é um ZIP válido"""
+    try:
+        return zipfile.is_zipfile(path)
+    except Exception:
+        return False
+
 def limpar_nome_arquivo(nome):
     """Remove caracteres inválidos do nome do arquivo"""
     return re.sub(r'[<>:"/\\|?*]', '', nome)
@@ -305,7 +312,16 @@ def processar():
                 zip_path = os.path.join(temp_dir, limpar_nome_arquivo(arquivo.filename))
                 arquivo.save(zip_path)
                 logger.info(f"📦 ZIP salvo: {arquivo.filename}")
+
+                # ✅ VALIDAÇÃO REAL DO ZIP (CORREÇÃO DO BUG)
+                if not is_valid_zip(zip_path):
+                    logger.error(f"❌ Arquivo não é um ZIP válido: {arquivo.filename}")
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    return jsonify({
+                        'erro': f"O arquivo '{arquivo.filename}' não é um ZIP válido ou está corrompido."
+                    }), 400
                 safe_extract_zip(zip_path, extract_dir)
+
             
             # Se for RAR, extrair
             elif filename_lower.endswith('.rar'):
