@@ -279,6 +279,10 @@ def processar():
         
         xml_count = 0
         for root, dirs, files in os.walk(extract_dir):
+            # IMPORTANTE: Ignorar a pasta DANFE-XML para não processar arquivos duplicados
+            if 'DANFE-XML' in root:
+                continue
+            
             for file in files:
                 if file.endswith('.xml'):
                     xml_count += 1
