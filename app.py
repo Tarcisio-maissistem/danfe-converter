@@ -98,12 +98,16 @@ AUTHORIZED_CNPJS_FILE = "authorized_cnpjs.txt"
 def carregar_cnpjs_autorizados():
     if not os.path.exists(AUTHORIZED_CNPJS_FILE):
         return set()
+
+    cnpjs = set()
     with open(AUTHORIZED_CNPJS_FILE, "r") as f:
-        return {
-            linha.strip()
-            for linha in f
-            if linha.strip().isdigit()
-        }
+        for linha in f:
+            cnpj = re.sub(r"\D", "", linha.strip())
+            if len(cnpj) == 14:
+                cnpjs.add(cnpj)
+
+    logger.info(f"🔐 CNPJs autorizados carregados: {len(cnpjs)}")
+    return cnpjs
 
 CNPJS_AUTORIZADOS = carregar_cnpjs_autorizados()
 
