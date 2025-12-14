@@ -19,20 +19,28 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Criar diretórios necessários
-RUN mkdir -p uploads temp_output templates
+RUN mkdir -p uploads temp_output templates static
+
+# Variável de ambiente para porta (Easypanel compatível)
+ENV PORT=80
 
 # Expor porta
-EXPOSE 5000
+EXPOSE 80
 
-# Comando para iniciar aplicação com Gunicorn
-CMD ["gunicorn", \
-     "--bind", "0.0.0.0:5000", \
-     "--workers", "2", \
-     "--threads", "4", \
-     "--timeout", "600", \
-     "--max-requests", "1000", \
-     "--max-requests-jitter", "50", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-", \
-     "--log-level", "info", \
-     "app:app"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health').read()" || exit 1
+
+# Comando para iniciar aplicação
+CMD gunicorn \
+    --bind 0.0.0.0:${PORT} \
+    --workers 2 \
+    --threads 4 \
+    --timeout 600 \
+    --max-requests 1000 \
+    --max-requests-jitter 50 \
+    --access-logfile - \
+    --error-logfile - \
+    --log-level info \
+    --preload \
+    app:app
