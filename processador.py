@@ -206,7 +206,7 @@ def xml_to_dict(xml_path):
         aliq_ipi = "0,00"
         v_ipi = "0,00"
         
-        # Lógica simplificada de impostos
+        # Lógica simplificada de impostos.
         if imposto is not None:
             for child in imposto:
                 if "ICMS" in child.tag:
