@@ -242,7 +242,7 @@ ALLOWED_ORIGINS=https://danfe.exemplo.com,https://www.exemplo.com
 - `INFO`: Operações normais
 - `WARNING`: Situações não críticas
 - `ERROR`: Erros no processamento
-- `DEBUG`: Detalhes técnicos (apenas dev)
+- `DEBUG`: Detalhes técnicos (apenas dev) 
 
 ## 🧪 Testes
 
