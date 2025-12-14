@@ -227,7 +227,7 @@ ALLOWED_ORIGINS=https://danfe.exemplo.com,https://www.exemplo.com
 - **Causa:** Memória insuficiente
 - **Solução:** Aumentar RAM do container para 2GB
 
-## 📝 Logs
+## 📝 Logs 
 
 ### Formato
 ```
