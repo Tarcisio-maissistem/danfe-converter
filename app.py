@@ -349,14 +349,20 @@ def processar():
             
             for file in files:
                 if file.endswith('.xml'):
-                    xml_count += 1
                     xml_path = os.path.join(root, file)
-                    
+
+                    # ✅ Ignorar XML que não é NFe (eventos, NFSe, etc)
+                    if not is_xml_nfe(xml_path):
+                        logger.info(f"⏭️ XML ignorado (não é NFe): {file}")
+                        continue
+
+                    xml_count += 1
+
                     if xml_count % 10 == 0:
                         logger.info(f"📊 Processados {xml_count} XMLs...")
-                    
+
                     sucesso, mensagem = processar_xml_para_danfe(xml_path, pasta_danfe)
-                    
+
                     if sucesso:
                         total_processados += 1
                         resultados.append({'tipo': 'sucesso', 'mensagem': mensagem})
