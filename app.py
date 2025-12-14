@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 import os
 import zipfile
@@ -9,40 +9,98 @@ import xml.etree.ElementTree as ET
 import re
 import traceback
 import logging
+import sys
+from datetime import datetime
 
-# Configurar logging
-logging.basicConfig(level=logging.INFO)
+# ========================================
+# CONFIGURAÇÃO DE LOGGING PROFISSIONAL
+# ========================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 logger = logging.getLogger(__name__)
 
+# ========================================
+# INICIALIZAÇÃO DA APLICAÇÃO
+# ========================================
 app = Flask(__name__)
 
-# Configurar CORS para produção
+# Configurar CORS com segurança
+ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', '*').split(',')
+logger.info(f"🔒 CORS configurado para: {ALLOWED_ORIGINS}")
+
 CORS(app, resources={
     r"/*": {
-        "origins": "*",  # Em produção, aceita qualquer origem
+        "origins": ALLOWED_ORIGINS,
         "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
+        "allow_headers": ["Content-Type"],
+        "max_age": 3600  # Cache preflight por 1 hora
     }
 })
 
+# Configurações da aplicação
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max
-app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 3600  # Cache de 1 hora para arquivos estáticos
 
-UPLOAD_FOLDER = '/tmp/uploads'
-TEMP_OUTPUT = '/tmp/temp_output'
+# Usar /tmp em produção (Docker/Linux) ou pasta local em desenvolvimento
+IS_PRODUCTION = os.getenv('ENVIRONMENT', 'production') == 'production'
+UPLOAD_FOLDER = '/tmp/uploads' if IS_PRODUCTION else 'uploads'
+TEMP_OUTPUT = '/tmp/temp_output' if IS_PRODUCTION else 'temp_output'
 
-# Criar diretórios no /tmp (para ambiente Docker)
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(TEMP_OUTPUT, exist_ok=True)
+logger.info(f"🌍 Ambiente: {'PRODUÇÃO' if IS_PRODUCTION else 'DESENVOLVIMENTO'}")
+logger.info(f"📁 Upload folder: {UPLOAD_FOLDER}")
+logger.info(f"📁 Output folder: {TEMP_OUTPUT}")
+
+# ========================================
+# FUNÇÕES AUXILIARES
+# ========================================
 
 def limpar_nome_arquivo(nome):
     """Remove caracteres inválidos do nome do arquivo"""
     return re.sub(r'[<>:"/\\|?*]', '', nome)
 
+def sanitize_path(base_dir, filename):
+    """
+    Previne Zip Slip vulnerability
+    Garante que o caminho extraído está dentro do diretório base
+    """
+    filepath = os.path.normpath(os.path.join(base_dir, filename))
+    if not filepath.startswith(os.path.abspath(base_dir)):
+        raise ValueError(f"⚠️ Caminho suspeito detectado: {filename}")
+    return filepath
+
+def safe_extract_zip(zip_path, extract_dir):
+    """
+    Extrai ZIP de forma segura, prevenindo Zip Slip
+    """
+    logger.info(f"📂 Extraindo ZIP com validação de segurança...")
+    
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        for member in zip_ref.namelist():
+            # Validar cada arquivo antes de extrair
+            target_path = sanitize_path(extract_dir, member)
+            
+            # Criar diretórios se necessário
+            if member.endswith('/'):
+                os.makedirs(target_path, exist_ok=True)
+            else:
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                
+                # Extrair arquivo
+                with zip_ref.open(member) as source, open(target_path, 'wb') as target:
+                    shutil.copyfileobj(source, target)
+    
+    logger.info(f"✅ ZIP extraído com segurança em: {extract_dir}")
+
 def extrair_dados_xml(xml_path):
     """Extrai informações do destinatário do XML"""
     try:
-        logger.info(f"📄 Extraindo dados do XML: {xml_path}")
+        logger.debug(f"📄 Extraindo dados do XML: {os.path.basename(xml_path)}")
         tree = ET.parse(xml_path)
         root = tree.getroot()
         
@@ -50,7 +108,7 @@ def extrair_dados_xml(xml_path):
         
         dest = root.find('.//nfe:dest', ns)
         if dest is None:
-            logger.warning(f"⚠️ Destinatário não encontrado em {xml_path}")
+            logger.warning(f"⚠️ Destinatário não encontrado em {os.path.basename(xml_path)}")
             return None, None, None
             
         nome_elem = dest.find('nfe:xNome', ns)
@@ -63,36 +121,28 @@ def extrair_dados_xml(xml_path):
         chave_elem = root.find('.//nfe:infNFe', ns)
         chave = chave_elem.get('Id', '').replace('NFe', '') if chave_elem is not None else os.path.basename(xml_path).replace('.xml', '')
         
-        logger.info(f"✅ Dados extraídos: {nome} - {documento}")
+        logger.debug(f"✅ Dados extraídos: {nome[:30]}... - {documento}")
         return limpar_nome_arquivo(nome), documento, chave
     except Exception as e:
-        logger.error(f"❌ Erro ao processar XML {xml_path}: {str(e)}")
-        logger.error(traceback.format_exc())
+        logger.error(f"❌ Erro ao processar XML {os.path.basename(xml_path)}: {str(e)}")
         return None, None, None
 
 def processar_xml_para_danfe(xml_path, output_dir):
     """Converte XML em DANFE (PDF)"""
     try:
-        logger.info(f"🔄 Processando: {xml_path}")
-        
         nome_cliente, documento, chave = extrair_dados_xml(xml_path)
         
         if not nome_cliente or not documento:
-            logger.error(f"❌ Falha ao extrair dados de {xml_path}")
             return False, "Erro ao extrair dados do XML"
         
         nome_pasta = f"{nome_cliente} - {documento}"
         pasta_cliente = os.path.join(output_dir, nome_pasta)
         os.makedirs(pasta_cliente, exist_ok=True)
-        logger.info(f"📁 Pasta criada: {pasta_cliente}")
         
         xml_destino = os.path.join(pasta_cliente, f"{chave}.xml")
         shutil.copy2(xml_path, xml_destino)
-        logger.info(f"📋 XML copiado: {xml_destino}")
         
         pdf_destino = os.path.join(pasta_cliente, f"{chave}.pdf")
-        
-        logger.info(f"🖨️ Gerando DANFE...")
         
         # Tentar diferentes encodings
         xml_content = None
@@ -100,7 +150,6 @@ def processar_xml_para_danfe(xml_path, output_dir):
             try:
                 with open(xml_path, 'r', encoding=encoding) as f:
                     xml_content = f.read()
-                logger.info(f"✅ XML lido com encoding: {encoding}")
                 break
             except UnicodeDecodeError:
                 continue
@@ -111,31 +160,75 @@ def processar_xml_para_danfe(xml_path, output_dir):
         
         danfe = Danfe(xml=xml_content)
         danfe.output(pdf_destino)
-        logger.info(f"✅ DANFE gerado: {pdf_destino}")
         
         return True, f"Processado: {nome_cliente}"
     except Exception as e:
-        logger.error(f"❌ Erro ao processar {xml_path}: {str(e)}")
-        logger.error(traceback.format_exc())
+        logger.error(f"❌ Erro ao processar {os.path.basename(xml_path)}: {str(e)}")
         return False, f"Erro: {str(e)}"
+
+def cleanup_old_files():
+    """Remove arquivos temporários antigos (mais de 1 hora)"""
+    try:
+        current_time = datetime.now().timestamp()
+        
+        for folder in [UPLOAD_FOLDER, TEMP_OUTPUT]:
+            if not os.path.exists(folder):
+                continue
+                
+            for item in os.listdir(folder):
+                item_path = os.path.join(folder, item)
+                
+                # Verificar idade do arquivo/pasta
+                if os.path.getmtime(item_path) < current_time - 3600:  # 1 hora
+                    try:
+                        if os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                        else:
+                            os.remove(item_path)
+                        logger.debug(f"🧹 Removido arquivo antigo: {item}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Não foi possível remover {item}: {str(e)}")
+    except Exception as e:
+        logger.error(f"❌ Erro ao limpar arquivos antigos: {str(e)}")
+
+# ========================================
+# ROTAS DA APLICAÇÃO
+# ========================================
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
+@app.route('/favicon.ico')
+def favicon():
+    """Rota explícita para favicon"""
+    return send_from_directory(
+        os.path.join(app.root_path, 'static'),
+        'favicon.ico',
+        mimetype='image/vnd.microsoft.icon'
+    ) if os.path.exists(os.path.join(app.root_path, 'static', 'favicon.ico')) else ('', 204)
+
 @app.route('/health')
 def health():
-    """Endpoint de health check"""
-    return jsonify({'status': 'healthy'}), 200
+    """Endpoint para verificar saúde da aplicação"""
+    return jsonify({
+        'status': 'ok',
+        'timestamp': datetime.now().isoformat(),
+        'environment': 'production' if IS_PRODUCTION else 'development'
+    }), 200
 
 @app.route('/processar', methods=['POST', 'OPTIONS'])
 def processar():
+    # Responder a requisições OPTIONS (preflight CORS)
     if request.method == 'OPTIONS':
         return '', 204
     
     logger.info("=" * 60)
     logger.info("🚀 INICIANDO PROCESSAMENTO")
     logger.info("=" * 60)
+    
+    # Limpar arquivos antigos antes de processar
+    cleanup_old_files()
     
     if 'arquivo' not in request.files:
         logger.error("❌ Nenhum arquivo enviado")
@@ -157,24 +250,29 @@ def processar():
     total_processados = 0
     total_erros = 0
     
+    # Criar pastas temporárias se não existirem
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs(TEMP_OUTPUT, exist_ok=True)
+    
     try:
+        # Criar pasta temporária única para este processamento
         import uuid
         temp_id = str(uuid.uuid4())[:8]
         temp_dir = os.path.join(UPLOAD_FOLDER, f'temp_{temp_id}')
         os.makedirs(temp_dir, exist_ok=True)
         
-        zip_path = os.path.join(temp_dir, arquivo.filename)
+        # Salvar arquivo ZIP
+        zip_path = os.path.join(temp_dir, limpar_nome_arquivo(arquivo.filename))
         arquivo.save(zip_path)
         logger.info(f"💾 ZIP salvo em: {zip_path}")
         
+        # Extrair ZIP com segurança
         extract_dir = os.path.join(temp_dir, 'extracted')
         os.makedirs(extract_dir, exist_ok=True)
         
-        logger.info(f"📂 Extraindo ZIP...")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_dir)
-        logger.info(f"✅ ZIP extraído em: {extract_dir}")
+        safe_extract_zip(zip_path, extract_dir)
         
+        # Processar cada XML
         pasta_danfe = os.path.join(extract_dir, 'DANFE-XML')
         os.makedirs(pasta_danfe, exist_ok=True)
         logger.info(f"📁 Pasta DANFE-XML criada: {pasta_danfe}")
@@ -185,21 +283,22 @@ def processar():
                 if file.endswith('.xml'):
                     xml_count += 1
                     xml_path = os.path.join(root, file)
-                    logger.info(f"📄 Encontrado XML #{xml_count}: {file}")
+                    
+                    if xml_count % 10 == 0:  # Log a cada 10 arquivos
+                        logger.info(f"📊 Processados {xml_count} XMLs...")
                     
                     sucesso, mensagem = processar_xml_para_danfe(xml_path, pasta_danfe)
                     
                     if sucesso:
                         total_processados += 1
                         resultados.append({'tipo': 'sucesso', 'mensagem': mensagem})
-                        logger.info(f"✅ Sucesso #{total_processados}")
                     else:
                         total_erros += 1
                         resultados.append({'tipo': 'erro', 'mensagem': f"{file}: {mensagem}"})
-                        logger.error(f"❌ Erro #{total_erros}: {mensagem}")
         
         logger.info(f"📊 Total de XMLs encontrados: {xml_count}")
         
+        # Criar arquivo ZIP com os resultados
         zip_resultado = os.path.join(TEMP_OUTPUT, f'DANFE-XML_{temp_id}.zip')
         
         logger.info(f"📦 Criando ZIP final: {zip_resultado}")
@@ -212,6 +311,7 @@ def processar():
         
         logger.info(f"✅ ZIP final criado com sucesso!")
         
+        # Limpar pasta temporária
         shutil.rmtree(temp_dir)
         logger.info(f"🧹 Arquivos temporários removidos")
         
@@ -229,6 +329,10 @@ def processar():
             'arquivo_zip': os.path.basename(zip_resultado)
         })
         
+    except ValueError as e:
+        # Erro de segurança (Zip Slip)
+        logger.error(f"🚨 TENTATIVA DE ATAQUE DETECTADA: {str(e)}")
+        return jsonify({'erro': 'Arquivo ZIP contém caminhos inválidos'}), 400
     except Exception as e:
         logger.error("=" * 60)
         logger.error(f"❌ ERRO CRÍTICO NO PROCESSAMENTO")
@@ -241,16 +345,47 @@ def processar():
 def download(filename):
     """Endpoint para download do arquivo ZIP processado"""
     try:
-        file_path = os.path.join(TEMP_OUTPUT, filename)
-        return send_file(file_path, as_attachment=True, download_name=filename)
+        # Sanitizar filename para prevenir path traversal
+        safe_filename = os.path.basename(filename)
+        file_path = os.path.join(TEMP_OUTPUT, safe_filename)
+        
+        # Verificar se arquivo existe
+        if not os.path.exists(file_path):
+            logger.error(f"❌ Arquivo não encontrado: {safe_filename}")
+            return jsonify({'erro': 'Arquivo não encontrado'}), 404
+        
+        logger.info(f"⬇️ Download iniciado: {safe_filename}")
+        
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name='DANFE-XML.zip',
+            max_age=0  # Sem cache para downloads
+        )
     except Exception as e:
+        logger.error(f"❌ Erro ao baixar arquivo: {str(e)}")
         return jsonify({'erro': f'Erro ao baixar arquivo: {str(e)}'}), 500
 
+# ========================================
+# EXECUÇÃO DA APLICAÇÃO
+# ========================================
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    logger.info("=" * 60)
+    logger.info("🚀 SISTEMA DANFE INICIADO!")
+    logger.info("=" * 60)
+    logger.info(f"🌍 Ambiente: {'PRODUÇÃO' if IS_PRODUCTION else 'DESENVOLVIMENTO'}")
+    logger.info(f"🔒 CORS Origins: {ALLOWED_ORIGINS}")
+    logger.info("=" * 60)
+    
+    if IS_PRODUCTION:
+        logger.warning("⚠️  Executando Flask dev server em produção!")
+        logger.warning("⚠️  Use Gunicorn para produção: gunicorn app:app")
+    
+    # Servidor - funciona local e produção
     app.run(
-        debug=False,
+        debug=not IS_PRODUCTION,
         host='0.0.0.0',
-        port=port,
+        port=int(os.getenv('PORT', 5000)),
         threaded=True
     )
