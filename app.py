@@ -12,6 +12,8 @@ import logging
 import sys
 from datetime import datetime
 import tempfile
+from functools import wraps
+
 
 # ========================================
 # CONFIGURAÇÃO DE LOGGING PROFISSIONAL
@@ -70,6 +72,40 @@ except ImportError:
 # ========================================
 # FUNÇÕES AUXILIARES
 # ========================================
+
+def validar_cnpj_api(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        cnpj = request.headers.get("X-CNPJ")
+
+        # Acesso via site (sem header) → permitido
+        if not cnpj:
+            return f(*args, **kwargs)
+
+        cnpj = re.sub(r"\D", "", cnpj)
+
+        if cnpj not in CNPJS_AUTORIZADOS:
+            logger.warning(f"🚫 CNPJ não autorizado: {cnpj}")
+            return jsonify({"erro": "CNPJ não autorizado"}), 403
+
+        logger.info(f"🔐 Acesso autorizado para CNPJ: {cnpj}")
+        return f(*args, **kwargs)
+
+    return decorated
+
+AUTHORIZED_CNPJS_FILE = "authorized_cnpjs.txt"
+
+def carregar_cnpjs_autorizados():
+    if not os.path.exists(AUTHORIZED_CNPJS_FILE):
+        return set()
+    with open(AUTHORIZED_CNPJS_FILE, "r") as f:
+        return {
+            linha.strip()
+            for linha in f
+            if linha.strip().isdigit()
+        }
+
+CNPJS_AUTORIZADOS = carregar_cnpjs_autorizados()
 
 def is_xml_nfe(xml_path):
     """
@@ -268,6 +304,7 @@ def health():
     }), 200
 
 @app.route('/processar', methods=['POST', 'OPTIONS'])
+@validar_cnpj_api
 def processar():
     if request.method == 'OPTIONS':
         return '', 204
